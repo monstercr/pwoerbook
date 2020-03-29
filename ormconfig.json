@@ -1,0 +1,15 @@
+{
+  "type": "mysql",
+  "host": "localhost",
+  "port": 3306,
+  "username": "root",
+  "password": "password",
+  "database": "powerbookdb",
+  "synchronize": false,
+  "entities": ["dist/**/*.entity{.ts,.js}"],
+  "migrationsTableName": "migrations",
+  "migrations": ["dist/modules/database/migrations/**/*{.ts,.js}"],
+  "cli": {
+    "migrationsDir": "src/modules/database/migrations"
+  }
+}
