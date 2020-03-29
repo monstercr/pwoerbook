@@ -1,6 +1,6 @@
-# Signature App
+# Powerbook App
 
-Backend for Signature App project, based on [Nest](https://github.com/nestjs/nest).
+Backend for Powerbook App project, based on [Nest](https://github.com/nestjs/nest).
 
 ## Installation
 
@@ -12,7 +12,7 @@ Docker
 MySQL
 
     mysql> ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY 'password';
-    mysql> CREATE DATABASE signaturedb;
+    mysql> CREATE DATABASE powerbookdb;
 
 NPM
 
