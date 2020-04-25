@@ -3,17 +3,25 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UserRoles } from 'src/core/enums/user-roles.enum';
 import { UserStatus } from 'src/core/enums/user-status.enum';
+import { generateRandomHash } from 'src/core/helpers/hash-generator';
 import { Repository } from 'typeorm';
 
 import { PersonalRecords } from '../database/entities/personal-records.entity';
 import { UserData } from '../database/entities/user-data.entity';
 import { User } from '../database/entities/user.entity';
+import { MailService } from '../sender/mail.service';
 import { AccountResponseDto } from './dto/account-response.dto';
+import { ChangePasswordRequestDto } from './dto/change-password-request.dto';
+import { ChangePasswordResponseDto } from './dto/change-password-response.dto';
 import { EditRequestDto } from './dto/edit-request.dto';
 import { EditResponseDto } from './dto/edit-response.dto';
+import { ForgotPasswordRequestDto } from './dto/forgot-password-request.dto';
+import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
 import { LoginRequestDto } from './dto/login-request.dto';
 import { RegistrationRequestDto } from './dto/registration-request.dto';
 import { RegistrationResponseDto } from './dto/registration-response.dto';
+import { ResetPasswordRequestDto } from './dto/reset-password-request.dto';
+import { ResetPasswordResponseDto } from './dto/reset-password-response.dto';
 import { IJwtTokenData } from './interfaces/jwt-token-data.interface';
 import { ITokenResponse } from './interfaces/token-response.interface';
 import { PasswordService } from './password.service';
@@ -23,6 +31,7 @@ export class AccountService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly passwordService: PasswordService,
+    private readonly mailService: MailService,
     @InjectRepository(User) private readonly userRepository: Repository<User>,
     @InjectRepository(PersonalRecords) private readonly personalRecordsRepository: Repository<PersonalRecords>,
     @InjectRepository(UserData) private readonly userDataRepository: Repository<UserData>
@@ -115,6 +124,61 @@ export class AccountService {
     return new RegistrationResponseDto(values);
   }
 
+  async forgotPassword(data: ForgotPasswordRequestDto): Promise<ForgotPasswordResponseDto> {
+    const existingUser = await this.userRepository
+      .createQueryBuilder('users')
+      .where('email = :email', { email: data.email })
+      .getOne();
+    if (!existingUser) {
+      throw new BadRequestException('User does not exist');
+    }
+    const resetPasswordHash = generateRandomHash();
+    await this.userRepository.update({ email: data.email }, { resetPasswordHash });
+    await this.mailService.sendResetPasswordRequest(data.email, resetPasswordHash);
+    return {
+      email: data.email,
+      status: HttpStatus.ACCEPTED
+    };
+  }
+
+  async resetPassword(data: ResetPasswordRequestDto): Promise<ResetPasswordResponseDto> {
+    const existingHash = await this.userRepository
+      .createQueryBuilder('users')
+      .where('resetPasswordHash = :hash', { hash: data.token })
+      .getOne();
+    if (!existingHash) {
+      throw new BadRequestException('Reset token is not active');
+    }
+    await this.userRepository.update(
+      { resetPasswordHash: data.token },
+      {
+        resetPasswordHash: null,
+        password: await this.passwordService.hashPassword(data.password)
+      }
+    );
+    return {
+      status: HttpStatus.ACCEPTED
+    };
+  }
+
+  async changePassword(userId: number, data: ChangePasswordRequestDto): Promise<ChangePasswordResponseDto> {
+    const user = await this.userRepository.findOne({ id: userId });
+    const isPasswordCorrect = await this.passwordService.comparePassword(data.oldPassword, user.password);
+    if (!isPasswordCorrect) {
+      throw new BadRequestException('Enter correct old password');
+    }
+    if (data.oldPassword === data.password) {
+      throw new BadRequestException('New password must be different than old password');
+    }
+    const result = await this.userRepository.update({ id: userId }, { password: await this.passwordService.hashPassword(data.password) });
+    if (!result) {
+      throw new BadRequestException('Password cannot be changed');
+    }
+    return {
+      status: HttpStatus.ACCEPTED
+    };
+  }
+
   async edit(userId: number, data: EditRequestDto): Promise<EditResponseDto> {
     const user = await this.userRepository
       .createQueryBuilder('user')
@@ -130,9 +194,13 @@ export class AccountService {
     user.userData.personalRecords.benchPress = data.benchPress;
     user.userData.personalRecords.deadLift = data.deadLift;
 
-    const result = await this.userRepository.update({ id: userId }, { ...user });
+    const resultUserData = await this.userDataRepository.update({ id: user.userData.id }, { ...user.userData });
+    const resultPersonalRecords = await this.personalRecordsRepository.update(
+      { id: user.userData.personalRecords.id },
+      { ...user.userData.personalRecords }
+    );
 
-    if (!result) {
+    if (!resultUserData || !resultPersonalRecords) {
       throw new BadRequestException();
     }
     return {

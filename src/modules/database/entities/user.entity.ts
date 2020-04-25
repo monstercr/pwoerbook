@@ -27,4 +27,7 @@ export class User extends DbBaseEntity {
   @OneToOne(() => UserData, { nullable: true })
   @JoinColumn()
   userData?: UserData;
+
+  @Column({ nullable: true })
+  resetPasswordHash: string;
 }
